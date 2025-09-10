@@ -11,7 +11,7 @@ AWG12 = Wire(AWG=12)
 scale = Emag(power_supply=keysight, wire=AWG12)
 
 inside_dia = .25 # meters
-inside_box = ((2**.5)/4) * inside_dia # 1/2 of the side length of a square that fits inside coil
+#inside_box = ((2**.5)/4) * inside_dia # 1/2 of the side length of a square that fits inside coil
 depth = 2 * .0254 # 2 inches in meters
 turn_per_layer =37
 weight_limit = 140 # lbs
@@ -19,7 +19,8 @@ print(f"Turns per layer: {turn_per_layer}")
 print(f"Wire diameter: {AWG12.diameter_nom_m:.6f} m")
 print(f"Layer depth: {depth:.6f} m")
 
-scale.def_field(x_range=(-inside_box, inside_box), y_range=(-inside_box, inside_box), z_range=(inside_dia/2, inside_dia/2), points_per_axis=5)
+#scale.def_field(x_range=(-inside_box, inside_box), y_range=(-inside_box, inside_box), z_range=(inside_dia/2, inside_dia/2), points_per_axis=5)
+scale.def_field((0, 0), (0, 0), (0, 0))
 current = np.zeros(turn_per_layer * turn_per_layer)
 resistance = np.zeros(turn_per_layer * turn_per_layer)
 voltage = np.zeros(turn_per_layer * turn_per_layer)
@@ -27,8 +28,7 @@ power = np.zeros(turn_per_layer * turn_per_layer)
 length = np.zeros(turn_per_layer * turn_per_layer)
 weight = np.zeros(turn_per_layer * turn_per_layer)
 b_field = np.zeros((turn_per_layer * turn_per_layer, scale.field.shape[0], 3))
-b_avg = np.zeros(turn_per_layer * turn_per_layer)
-b_max = np.zeros(turn_per_layer * turn_per_layer)
+b_mag = np.zeros(turn_per_layer * turn_per_layer)
 turns = np.zeros(turn_per_layer * turn_per_layer)
 # Fill the arrays layer by layer
 k = 0
@@ -50,20 +50,27 @@ for j in range(turn_per_layer):  # from 0 to 1
         resistance[k] = scale.resistance # the resistance of the ith turn in the jth layer
         length[k] = scale.coil_length # the length of wire at the ith turn in the jth layer
         b_field[k] = scale.b_field # the b-field at the ith turn in the jth layer
-        b_avg[k] = np.mean(np.linalg.norm(scale.b_field, axis=1)) # the average b-field at the ith turn in the jth layer
-        b_max[k] = np.max(np.linalg.norm(scale.b_field, axis=1)) # the maximum b-field at the ith turn in the jth layer
-        turns[k] = scale.net_turns # the number of turns at the ith turn in the jth layer
+        b_mag[k] = np.linalg.norm(scale.b_field, axis=1) # the b-field magnitude at the ith turn in the jth layer
+        turns[k] = scale.helm_turns # the number of turns at the ith turn in the jth layer
         k += 1
-        '''print("i: ", i, "j: ", j)
-        print("length: ", scale.coil_length)
-        print("resistance: ", scale.resistance)
-        print("")'''
     print("% complete: ", (k / (turn_per_layer * turn_per_layer)) * 100)
-    # If we've exceeded weight limit, break out of outer loop too
+    # Break when weight limit is exceeded
     if scale.weight >= weight_limit:
         break
     
-#scale.plot_coil_geometry()
+#final field analysis at weight limit
+
+scale.print_parameters()
+print("b-field origin: ", scale.b_field[0])
+print("b origin magnitude: ", np.linalg.norm(scale.b_field[0]))
+
+#redefine field
+scale.def_field((-inside_dia/2, inside_dia/2), (-inside_dia/2, inside_dia/2), 
+(-inside_dia/2, inside_dia/2), points_per_axis=10)
+scale.calc_b_field()
+scale.plot_b_field()
+print("b-field max: ", np.max(b_mag))
+print("b-field avg: ", np.mean(np.linalg.norm(scale.b_field, axis=1)))
 
 # Create figure with subplots for each parameter
 fig, axes = plt.subplots(3, 3, figsize=(15, 12))
@@ -115,26 +122,12 @@ axes[1, 2].set_title('Voltage vs Turns')
 axes[1, 2].grid(True)
 
 # Plot 7: B-field Average
-axes[2, 0].plot(turns[valid_mask], b_avg[valid_mask], 'purple', linewidth=2)
+axes[2, 0].plot(turns[valid_mask], b_mag[valid_mask], 'purple', linewidth=2)
 axes[2, 0].set_xlabel('Number of Turns')
-axes[2, 0].set_ylabel('B-field Average (T)')
-axes[2, 0].set_title('B-field Average vs Turns')
+axes[2, 0].set_ylabel('B-field Magnitude at Origin (T)')
+axes[2, 0].set_title('B-field Magnitude at Origin vs Turns')
 axes[2, 0].grid(True)
 
-# Plot 8: B-field Maximum
-axes[2, 1].plot(turns[valid_mask], b_max[valid_mask], 'brown', linewidth=2)
-axes[2, 1].set_xlabel('Number of Turns')
-axes[2, 1].set_ylabel('B-field Maximum (T)')
-axes[2, 1].set_title('B-field Maximum vs Turns')
-axes[2, 1].grid(True)
-
-# Plot 9: B-field Ratio (Max/Avg)
-b_ratio = b_max[valid_mask] / b_avg[valid_mask]
-axes[2, 2].plot(turns[valid_mask], b_ratio, 'teal', linewidth=2)
-axes[2, 2].set_xlabel('Number of Turns')
-axes[2, 2].set_ylabel('B-field Ratio (Max/Avg)')
-axes[2, 2].set_title('B-field Uniformity vs Turns')
-axes[2, 2].grid(True)
 
 plt.tight_layout()
 plt.show()

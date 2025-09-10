@@ -745,11 +745,11 @@ class Emag:
         Parameters
         ----------
         x_range : tuple
-            Tuple of (x_min, x_max)
+            Tuple of (x_min, x_max). If x_min == x_max, creates a single point.
         y_range : tuple
-            Tuple of (y_min, y_max)
+            Tuple of (y_min, y_max). If y_min == y_max, creates a single point.
         z_range : tuple
-            Tuple of (z_min, z_max)
+            Tuple of (z_min, z_max). If z_min == z_max, creates a single point.
         points_per_axis : int, optional
             Number of points to use for each axis. Default is 20.
 
@@ -760,11 +760,16 @@ class Emag:
         Notes
         -----
         Modifies self.field by setting the field grid to analyze.
-        Indexing specific field points from this array is not recommended.
+        Supports multiple field types:
+        - Point case: All ranges are single points (x_min == x_max, etc.)
+        - 1D case (lines): Two ranges are single points, one varies
+        - 2D case (planes): One range is a single point, two vary
+        - 3D case (volumes): All ranges vary
+        
         Every row of the field array is a point in the field grid.
         The field array is not a meshgrid, it is a flat array of points.
         This is done to simplify the numpy broadcasting operations.
-        reshape the field array to a meshgrid if needed for plotting.
+        Reshape the field array to a meshgrid if needed for plotting.
 
         Raises
         ------
@@ -779,6 +784,38 @@ class Emag:
         if points_per_axis <= 0:
             raise ValueError("def_field: points_per_axis must be a positive integer")
     
+        # Count how many ranges are single points (1D) or lines (2D)
+        single_x = x_range[0] == x_range[1]
+        single_y = y_range[0] == y_range[1]
+        single_z = z_range[0] == z_range[1]
+        
+        num_single = sum([single_x, single_y, single_z])
+        
+        # Point case (all three ranges are single points)
+        if num_single == 3:
+            self.field = np.array([[x_range[0], y_range[0], z_range[0]]])
+            return
+        
+        # 1D cases (lines) - two ranges are single points
+        if num_single == 2:
+            if not single_x:  # Line along x-axis
+                x_points = np.linspace(x_range[0], x_range[1], points_per_axis)
+                y_points = np.full(x_points.shape, y_range[0])
+                z_points = np.full(x_points.shape, z_range[0])
+                self.field = np.column_stack((x_points, y_points, z_points))
+                return
+            elif not single_y:  # Line along y-axis
+                y_points = np.linspace(y_range[0], y_range[1], points_per_axis)
+                x_points = np.full(y_points.shape, x_range[0])
+                z_points = np.full(y_points.shape, z_range[0])
+                self.field = np.column_stack((x_points, y_points, z_points))
+                return
+            elif not single_z:  # Line along z-axis
+                z_points = np.linspace(z_range[0], z_range[1], points_per_axis)
+                x_points = np.full(z_points.shape, x_range[0])
+                y_points = np.full(z_points.shape, y_range[0])
+                self.field = np.column_stack((x_points, y_points, z_points))
+                return
 
         #2d cases
         if x_range[0] == x_range[1]:
