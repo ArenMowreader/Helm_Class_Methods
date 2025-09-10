@@ -124,7 +124,7 @@ class Wire:
         self.ohms_per_meter = wire_row['ohms_per_meter'].iloc[0]
         self.lbs_per_meter = wire_row['lbs_per_meter'].iloc[0]
 
-class Magnet:
+class Emag:
     """
     Electromagnet with configurable geometry and power parameters.
     
@@ -593,6 +593,8 @@ class Magnet:
             self.geometry_2 = np.concatenate((self.geometry_2, bottom_coords), axis=0)
         
         self.update_parameters()
+        self.geometry_1_turns += 1
+        self.geometry_2_turns += 1
         self.helm_turns += 1
         self.net_turns += 2  # Added two turns
    
@@ -633,6 +635,51 @@ class Magnet:
         ax.set_box_aspect([1, 1, 1])
         
         plt.show()
+
+    def plot_b_field(self, index=None):
+        """
+        Plot the b-field in 3D along with coil geometry.
+        """
+        # Create 3D figure
+        fig = plt.figure(figsize=(12, 10))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # Plot coil geometry first (so it appears behind the field vectors)
+        if self.geometry_1.size > 0:
+            ax.plot(self.geometry_1[:, 0], 
+                   self.geometry_1[:, 1], 
+                   self.geometry_1[:, 2], 
+                   'b-', linewidth=3, label='Geometry 1', alpha=0.8)
+        
+        if self.geometry_2.size > 0:
+            ax.plot(self.geometry_2[:, 0], 
+                   self.geometry_2[:, 1], 
+                   self.geometry_2[:, 2], 
+                   'r-', linewidth=3, label='Geometry 2', alpha=0.8)
+
+        # Plot b-field vectors
+        if self.b_field.size > 0:
+            # Reduce density for better visualization (plot every nth vector)
+            step = max(1, len(self.field) // 1000)  # Show max 100 vectors
+            ax.quiver(self.field[::step, 0], self.field[::step, 1], self.field[::step, 2],
+                     self.b_field[::step, 0], self.b_field[::step, 1], self.b_field[::step, 2],
+                     length=.05, normalize=True, color='green', alpha=0.6, label='Magnetic Field')
+        
+        # Set labels and title
+        ax.set_xlabel('X (m)')
+        ax.set_ylabel('Y (m)')
+        ax.set_zlabel('Z (m)')
+        ax.set_title('Magnetic Field and Coil Geometry')
+        
+        # Add legend
+        ax.legend()
+        
+        # Set equal aspect ratio for better visualization
+        ax.set_box_aspect([1, 1, 1])
+        
+        plt.show()
+        plt.show()
+        
 
     def get_geometry_info(self):
         """
@@ -713,6 +760,11 @@ class Magnet:
         Notes
         -----
         Modifies self.field by setting the field grid to analyze.
+        Indexing specific field points from this array is not recommended.
+        Every row of the field array is a point in the field grid.
+        The field array is not a meshgrid, it is a flat array of points.
+        This is done to simplify the numpy broadcasting operations.
+        reshape the field array to a meshgrid if needed for plotting.
 
         Raises
         ------
@@ -729,29 +781,29 @@ class Magnet:
     
 
         #2d cases
-        if x_range[0] == 0 and x_range[1] == 0:
+        if x_range[0] == x_range[1]:
             # y-z plane (x = 0)
-            x_points = np.full(points_per_axis, 0)
             y_points = np.linspace(y_range[0], y_range[1], points_per_axis)
             z_points = np.linspace(z_range[0], z_range[1], points_per_axis)
-            X, Y, Z = np.meshgrid(x_points, y_points, z_points, indexing='ij')
-            self.field = np.column_stack((X.flatten(), Y.flatten(), Z.flatten()))
+            Y, Z = np.meshgrid(y_points, z_points, indexing='ij')
+            X = np.full(Y.flatten().shape, x_range[0])
+            self.field = np.column_stack((X, Y.flatten(), Z.flatten()))
             return
-        elif y_range[0] == 0 and y_range[1] == 0:
+        elif y_range[0] == y_range[1]:
             # x-z plane (y = 0)
             x_points = np.linspace(x_range[0], x_range[1], points_per_axis)
-            y_points = np.full(points_per_axis, 0)
             z_points = np.linspace(z_range[0], z_range[1], points_per_axis)
-            X, Y, Z = np.meshgrid(x_points, y_points, z_points, indexing='ij')
-            self.field = np.column_stack((X.flatten(), Y.flatten(), Z.flatten()))
+            X, Z = np.meshgrid(x_points, z_points, indexing='ij')
+            Y = np.full(X.flatten().shape, y_range[0])
+            self.field = np.column_stack((X.flatten(), Y, Z.flatten()))
             return
-        elif z_range[0] == 0 and z_range[1] == 0:
+        elif z_range[0] == z_range[1]:
             # x-y plane (z = 0)
             x_points = np.linspace(x_range[0], x_range[1], points_per_axis)
             y_points = np.linspace(y_range[0], y_range[1], points_per_axis)
-            z_points = np.full(points_per_axis, 0)
-            X, Y, Z = np.meshgrid(x_points, y_points, z_points, indexing='ij')
-            self.field = np.column_stack((X.flatten(), Y.flatten(), Z.flatten()))
+            X, Y = np.meshgrid(x_points, y_points, indexing='ij')
+            Z = np.full(X.flatten().shape, z_range[0])
+            self.field = np.column_stack((X.flatten(), Y.flatten(), Z))
             return
 
         #3d case
@@ -777,7 +829,12 @@ class Magnet:
         Notes
         -----
         Uses broadcasting for efficient computation.
+        np.newaxis is used to expand dimensions of arrays to match shapes for
+        broadcasting.
         displacements[i, j, :] = field_point[i] - coil_point[j]
+        The index i is the field point, and the index j is the coil point.
+        The last three dimensions are the x, y, and z components of the displacement vector.
+        The result is a 3D array of shape (n_field_points, n_coil_points, 3)
         """
         if self.field.size == 0:
             raise ValueError("calc_displacement_vectors: field must be defined")
@@ -802,7 +859,19 @@ class Magnet:
         
         return displacements_1, displacements_2
 
-    def def_b_field(self):
+    def calc_displacement_mag(self, displacements):
+        """
+        Calculate the magnitude of the displacement vectors.
+        """
+        return np.linalg.norm(displacements, axis=2)
+    
+    def calc_displacement_unit(self, displacements):
+        """
+        Calculate the unit vector of the displacement vectors.
+        """
+        return displacements / self.calc_displacement_mag(displacements)[:, :, np.newaxis]
+
+    def calc_b_field(self):
         """
         Analyzes the Magnetic Field of the Electromagnet. Using the Biot-Savart law.
 
@@ -828,7 +897,239 @@ class Magnet:
             raise ValueError("def_b_field: field must be defined")
         
         # Calculate the magnetic field at each point in the field grid
-        self.b_field = np.zeros(self.field.shape)
+        # b_field shape: (n_field_points, 3) for Bx, By, Bz components at each point
+        self.b_field = np.zeros((self.field.shape[0], 3))
+        mu_0 = 4 * np.pi * 10**-7
+        const = (mu_0*self.current) / (4 * np.pi)
+        
+        # Calculate delta vectors first
+        self.calc_delta()
+        displacements_1, displacements_2 = self.calc_displacement_vectors()
+        
+        # Calculate cross products with proper broadcasting
+        # delta_geometry_1: (n_coil_points_1, 3)
+        # displacements_1: (n_field_points, n_coil_points_1, 3)
+        # Need to broadcast delta_geometry_1 to match displacements_1
+        if self.geometry_1.size > 0 and self.delta_geometry_1.size > 0:
+            # Reshape delta_geometry_1 to (1, n_coil_points_1, 3) for broadcasting
+            # this is done so every field point is crossed with every coil point
+            # the result is a 3D array of shape (n_field_points, n_coil_points_1, 3)
+            # broadcasting with np.newaxis saves memory and time by not creating
+            # a new axis filled with identical values for each field point
+            
+            # This line is done to make the delta_geometry_1 array the same length as the displacements_1 array
+            # It is assumed that the last dl will be the same as the next to last
+            delta_1_broadcast = np.concatenate((self.delta_geometry_1, self.delta_geometry_1[-1:,:]))
+            delta_1_broadcast = delta_1_broadcast[np.newaxis, :, :]
+
+            geometry_1_cross = np.cross(delta_1_broadcast, displacements_1, axis=2)
+            # Calculate Biot-Savart contribution for each coil segment
+            # geometry_1_cross: (n_field_points, n_coil_points_1, 3)    
+            # displacements_1_mag_cubed: (n_field_points, n_coil_points_1)
+            displacements_1_mag_cubed = self.calc_displacement_mag(displacements_1)**3
+            
+            # Biot-Savart: B = (μ₀I/4π) * ∫ (dl × r̂) / r³
+            # Use np.trapz to integrate over wire segments with dx = delta magnitudes
+            integrand = geometry_1_cross / displacements_1_mag_cubed[:, :, np.newaxis]
+            geometry_1_b_field = const * np.sum(integrand, axis=1)
+        else:
+            geometry_1_cross = np.array([])
+            geometry_1_mag_cubed = np.array([])
+            geometry_1_b_field = np.zeros((self.field.shape[0], 3))
+        
+        if self.geometry_2.size > 0 and self.delta_geometry_2.size > 0:
+            # Reshape delta_geometry_2 to (1, n_coil_points_2, 3) for broadcasting
+            # This line is done to make the delta_geometry_2 array the same length as the displacements_2 array
+            # It is assumed that the last dl will be the same as the next to last
+            delta_2_broadcast = np.concatenate((self.delta_geometry_2, self.delta_geometry_2[-1:,:]))
+            delta_2_broadcast = delta_2_broadcast[np.newaxis, :, :]
+            
+            geometry_2_cross = np.cross(delta_2_broadcast, displacements_2, axis=2)
+            
+            # Calculate Biot-Savart contribution for geometry_2
+            displacements_2_mag_cubed = self.calc_displacement_mag(displacements_2)**3
+            
+            # Use np.trapz to integrate over wire segments with dx = delta magnitudes
+            integrand = geometry_2_cross / displacements_2_mag_cubed[:, :, np.newaxis]  # (n_field_points, n_coil_points_2, 3)
+            geometry_2_b_field = const * np.sum(integrand, axis=1)
+        else:
+            geometry_2_cross = np.array([])
+            geometry_2_mag_cubed = np.array([])
+            geometry_2_b_field = np.zeros((self.field.shape[0], 3))
+        
+        # Combine contributions from both geometries
+        if self.geometry_1.size > 0 and self.geometry_2.size > 0:
+            self.b_field = geometry_1_b_field + geometry_2_b_field
+        elif self.geometry_1.size > 0:
+            self.b_field = geometry_1_b_field
+        elif self.geometry_2.size > 0:
+            self.b_field = geometry_2_b_field
+        else:
+            self.b_field = np.zeros((self.field.shape[0], 3))
+       
+    def calc_b_field_trapz(self):
+        """
+        Analyzes the Magnetic Field of the Electromagnet using the Biot-Savart law with np.trapz integration.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        ndarray
+            Magnetic field array with shape (n_field_points, 3) for Bx, By, Bz components
+        
+        Notes
+        -----
+        Uses np.trapz for numerical integration instead of np.sum.
+        This method returns the b_field array but doesn't modify self.b_field.
+
+        Raises
+        ------
+        ValueError
+            If self.field is not defined
+
+        """
+        if self.field.size == 0:
+            raise ValueError("calc_b_field_trapz: field must be defined")
+        
+        # Calculate the magnetic field at each point in the field grid
+        # b_field shape: (n_field_points, 3) for Bx, By, Bz components at each point
+        b_field = np.zeros((self.field.shape[0], 3))
+        mu_0 = 4 * np.pi * 10**-7
+        const = (mu_0*self.current) / (4 * np.pi)
+        
+        # Calculate delta vectors first
+        self.calc_delta()
+        displacements_1, displacements_2 = self.calc_displacement_vectors()
+        
+        # Calculate cross products with proper broadcasting
+        if self.geometry_1.size > 0 and self.delta_geometry_1.size > 0:
+            # Reshape delta_geometry_1 to (1, n_coil_points_1, 3) for broadcasting
+            delta_1_broadcast = np.concatenate((self.delta_geometry_1, self.delta_geometry_1[-1:,:]))
+            delta_1_broadcast = delta_1_broadcast[np.newaxis, :, :]
+
+            geometry_1_cross = np.cross(delta_1_broadcast, displacements_1, axis=2)
+            # Calculate Biot-Savart contribution for each coil segment
+            displacements_1_mag_cubed = self.calc_displacement_mag(displacements_1)**3
+            
+            # Biot-Savart: B = (μ₀I/4π) * ∫ (dl × r̂) / r³
+            # Use np.trapz to integrate over wire segments
+            integrand = geometry_1_cross / displacements_1_mag_cubed[:, :, np.newaxis]
+            
+            # Integrate using np.trapz for each field point and component
+            geometry_1_b_field = np.zeros((self.field.shape[0], 3))
+            for i in range(self.field.shape[0]):
+                for j in range(3):
+                    geometry_1_b_field[i, j] = np.trapz(integrand[i, :, j])
+            
+            geometry_1_b_field = const * geometry_1_b_field
+        else:
+            geometry_1_b_field = np.zeros((self.field.shape[0], 3))
+        
+        if self.geometry_2.size > 0 and self.delta_geometry_2.size > 0:
+            # Reshape delta_geometry_2 to (1, n_coil_points_2, 3) for broadcasting
+            delta_2_broadcast = np.concatenate((self.delta_geometry_2, self.delta_geometry_2[-1:,:]))
+            delta_2_broadcast = delta_2_broadcast[np.newaxis, :, :]
+            
+            geometry_2_cross = np.cross(delta_2_broadcast, displacements_2, axis=2)
+            
+            # Calculate Biot-Savart contribution for geometry_2
+            displacements_2_mag_cubed = self.calc_displacement_mag(displacements_2)**3
+            
+            # Use np.trapz to integrate over wire segments
+            integrand = geometry_2_cross / displacements_2_mag_cubed[:, :, np.newaxis]
+            
+            # Integrate using np.trapz for each field point and component
+            geometry_2_b_field = np.zeros((self.field.shape[0], 3))
+            for i in range(self.field.shape[0]):
+                for j in range(3):
+                    geometry_2_b_field[i, j] = np.trapz(integrand[i, :, j])
+            
+            geometry_2_b_field = const * geometry_2_b_field
+        else:
+            geometry_2_b_field = np.zeros((self.field.shape[0], 3))
+        
+        # Combine contributions from both geometries
+        if self.geometry_1.size > 0 and self.geometry_2.size > 0:
+            b_field = geometry_1_b_field + geometry_2_b_field
+        elif self.geometry_1.size > 0:
+            b_field = geometry_1_b_field
+        elif self.geometry_2.size > 0:
+            b_field = geometry_2_b_field
+        else:
+            b_field = np.zeros((self.field.shape[0], 3))
+        
+        return b_field
+       
+    def reshape_field_for_plotting(self, points_per_axis):
+        """
+        Reshape the field array back to meshgrid format for plotting.
+        
+        Parameters
+        ----------
+        points_per_axis : int
+            Number of points used per axis when creating the field
+            
+        Returns
+        -------
+        tuple
+            (X, Y, Z) meshgrid arrays for plotting
+            
+        Notes
+        -----
+        Converts the flattened field array back to 3D meshgrid format.
+        This is useful for plotting field data with plt.contour, plt.contourf, etc.
+        """
+        if self.field.size == 0:
+            raise ValueError("reshape_field_for_plotting: field must be defined")
+        
+        # Extract x, y, z coordinates from flattened field
+        x_coords = self.field[:, 0]
+        y_coords = self.field[:, 1]
+        z_coords = self.field[:, 2]
+        
+        # Reshape to 3D arrays
+        X = x_coords.reshape(points_per_axis, points_per_axis, points_per_axis)
+        Y = y_coords.reshape(points_per_axis, points_per_axis, points_per_axis)
+        Z = z_coords.reshape(points_per_axis, points_per_axis, points_per_axis)
+        
+        return X, Y, Z
+    
+    def reshape_b_field_for_plotting(self, points_per_axis):
+        """
+        Reshape the b_field array back to meshgrid format for plotting.
+        
+        Parameters
+        ----------
+        points_per_axis : int
+            Number of points used per axis when creating the field
+            
+        Returns
+        -------
+        tuple
+            (Bx, By, Bz) meshgrid arrays for plotting magnetic field components
+            
+        Notes
+        -----
+        Converts the flattened b_field array back to 3D meshgrid format.
+        Each component (Bx, By, Bz) is reshaped separately.
+        """
+        if self.b_field.size == 0:
+            raise ValueError("reshape_b_field_for_plotting: b_field must be defined")
+        
+        # Extract Bx, By, Bz components from flattened b_field
+        Bx = self.b_field[:, 0]
+        By = self.b_field[:, 1]
+        Bz = self.b_field[:, 2]
+        
+        # Reshape to 3D arrays
+        Bx_3d = Bx.reshape(points_per_axis, points_per_axis, points_per_axis)
+        By_3d = By.reshape(points_per_axis, points_per_axis, points_per_axis)
+        Bz_3d = Bz.reshape(points_per_axis, points_per_axis, points_per_axis)
+        
+        return Bx_3d, By_3d, Bz_3d
         
         
         
