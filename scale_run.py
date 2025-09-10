@@ -66,7 +66,7 @@ print("b origin magnitude: ", np.linalg.norm(scale.b_field[0]))
 
 #redefine field
 scale.def_field((-inside_dia/2, inside_dia/2), (-inside_dia/2, inside_dia/2), 
-(-inside_dia/2, inside_dia/2), points_per_axis=10)
+(-inside_dia/2, inside_dia/2), points_per_axis=5)
 scale.calc_b_field()
 scale.plot_b_field()
 print("b-field max: ", np.max(b_mag))
