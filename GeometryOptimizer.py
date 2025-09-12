@@ -28,28 +28,33 @@ class GeometryOptimizer:
         Wire specifications (AWG)
     base_radius : float
         Inner coil radius (meters)
-    max_turns : int
-        Maximum Helmholtz turns constraint
     weight_limit : float
-        Maximum weight limit (pounds)
+        Maximum weight limit for a single coil (pounds)
+        Note: The electromagnet.weight will return weight for both coils
     field_point : ndarray, optional
         Target field point. Default [0, 0, 0]
     """
     
-    def __init__(self, power_supply, wire, base_radius, max_turns, weight_limit, field_point=None):
+    def __init__(self, power_supply, wire, base_radius, weight_limit, field_point=None):
         self.power_supply = power_supply
         self.wire = wire
         self.base_radius = base_radius
-        self.max_turns = max_turns
-        self.weight_limit = weight_limit
+        self.weight_limit = weight_limit  # Single coil weight limit
         self.field_point = field_point if field_point is not None else np.array([0, 0, 0])
         
-        # Set search bounds based on max_turns
-        self.max_search_dim = int(np.sqrt(max_turns)) + 10
+        # Calculate max_turns based on weight limit
+        # For a single coil: weight = 2 * pi * radius * turns * lbs_per_meter
+        # Solving for turns: turns = weight / (2 * pi * radius * lbs_per_meter)
+        # We use a conservative estimate with average radius
+        avg_radius = base_radius + (5 * wire.diameter_nom_m)  # Assume ~5 layers average
+        self.max_turns = int(weight_limit / (2 * np.pi * avg_radius * wire.lbs_per_meter))
+        
+        # Set search bounds based on calculated max_turns
+        self.max_search_dim = int(np.sqrt(self.max_turns)) + 10
         
         print(f"Optimizer initialized:")
-        print(f"  Max turns: {max_turns}")
-        print(f"  Weight limit: {weight_limit} lbs")
+        print(f"  Max turns (calculated): {self.max_turns}")
+        print(f"  Weight limit (single coil): {weight_limit} lbs")
         print(f"  Wire: AWG {wire.AWG}")
         print(f"  Base radius: {base_radius*1000:.1f} mm")
     
@@ -74,7 +79,7 @@ class GeometryOptimizer:
                     radius=radius,
                     separation=separation,
                     center=np.array([0, 0, 0]),
-                    points_per_turn=100
+                    points_per_turn=200
                 )
         
         return emag
@@ -92,7 +97,8 @@ class GeometryOptimizer:
             emag = self.create_coil_geometry(radial_layers, axial_layers)
             emag.update_parameters()
             
-            if emag.weight > self.weight_limit:
+            # emag.weight is for both coils, but weight_limit is for single coil
+            if emag.weight > (2 * self.weight_limit):
                 return {'b_field_magnitude': 0, 'valid': False, 'constraint': 'weight', 'weight': emag.weight}
             
             # Calculate B-field
@@ -339,13 +345,22 @@ class GeometryOptimizer:
         
         print(f"Geometry:")
         print(f"  Radial layers: {geom['radial_layers']}")
+        
+        # Calculate geometry dimensions
+        radial_depth = (geom['radial_layers'] - 1) * self.wire.diameter_nom_m
+        outside_radius = self.base_radius + radial_depth
+        axial_height = geom['axial_layers'] * self.wire.diameter_nom_m
+        
+        print(f"  Radial depth: {radial_depth*1000:.1f} mm")
+        print(f"  Outside radius: {outside_radius*1000:.1f} mm")
         print(f"  Axial layers: {geom['axial_layers']}")
-        print(f"  Helmholtz turns: {perf['helm_turns']}/{self.max_turns}")
-        print(f"  Total turns: {perf['turns_total']}")
+        print(f"  Axial height: {axial_height*1000:.1f} mm")
+        print(f"  Single coil turns: {perf['helm_turns']}/{self.max_turns}")
         
         print(f"\nPerformance:")
         print(f"  B-field: {perf['b_field_magnitude']:.4f} T")
-        print(f"  Weight: {perf['weight']:.1f}/{self.weight_limit} lbs")
+        print(f"  Weight (both coils): {perf['weight']:.1f} lbs")
+        print(f"  Weight (single coil): {perf['weight']/2:.1f}/{self.weight_limit} lbs")
         print(f"  Power: {perf['power']:.0f} W")
         print(f"  Current: {perf['current']:.1f} A")
         print(f"  Voltage: {perf['voltage']:.1f} V")
@@ -360,7 +375,7 @@ class GeometryOptimizer:
 
 
 def optimize_electromagnet_geometry(power_supply_specs, wire_awg, base_radius, 
-                                  max_turns, weight_limit, field_point=None, 
+                                  weight_limit, field_point=None, 
                                   max_iterations=100, verbose=True):
     """
     Optimize electromagnet geometry for maximum B-field.
@@ -373,10 +388,8 @@ def optimize_electromagnet_geometry(power_supply_specs, wire_awg, base_radius,
         Wire gauge
     base_radius : float
         Inner coil radius (meters)
-    max_turns : int
-        Maximum Helmholtz turns
     weight_limit : float
-        Maximum weight (pounds)
+        Maximum weight for a single coil (pounds)
     field_point : array-like, optional
         Target point [x,y,z]. Default [0,0,0]
     max_iterations : int
@@ -396,7 +409,6 @@ def optimize_electromagnet_geometry(power_supply_specs, wire_awg, base_radius,
         power_supply_specs={'max_voltage': 500, 'max_current': 40, 'max_power': 10000},
         wire_awg=12,
         base_radius=0.125,
-        max_turns=100,
         weight_limit=140
     )
     
@@ -405,7 +417,6 @@ def optimize_electromagnet_geometry(power_supply_specs, wire_awg, base_radius,
         power_supply_specs={'max_voltage': 300, 'max_current': 50, 'max_power': 10000},
         wire_awg=14,
         base_radius=0.1,
-        max_turns=50,
         weight_limit=75,
         field_point=[0, 0, 0.01]
     )
@@ -423,7 +434,6 @@ def optimize_electromagnet_geometry(power_supply_specs, wire_awg, base_radius,
         power_supply=power_supply,
         wire=wire,
         base_radius=base_radius,
-        max_turns=max_turns,
         weight_limit=weight_limit,
         field_point=np.array(field_point) if field_point else None
     )

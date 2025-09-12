@@ -1,6 +1,6 @@
-# Modern Helmholtz Coil Optimization GUI
+# Helmholtz Coil Optimization GUI
 
-A comprehensive, modern GUI for Helmholtz coil design and optimization with 5 integrated stages.
+A comprehensive GUI for Helmholtz coil design and optimization with 5 integrated stages.
 
 ## Features
 
@@ -87,7 +87,7 @@ A comprehensive, modern GUI for Helmholtz coil design and optimization with 5 in
 ### Quick Start
 ```bash
 cd HelmholtzGUI
-python run_modern_gui.py
+python run_helm_opt_GUI.py
 ```
 
 ### Workflow
@@ -133,8 +133,8 @@ python run_modern_gui.py
 
 ```
 HelmholtzGUI/
-├── modern_helmholtz_gui.py    # Main GUI application
-├── run_modern_gui.py          # Launcher script
+├── helm_opt_GUI.py           # Main GUI application
+├── run_helm_opt_GUI.py       # Launcher script
 ├── README_MODERN_GUI.md       # This file
 └── MWS_wire_data.csv         # Wire specifications data
 ```

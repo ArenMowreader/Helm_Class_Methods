@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Launcher script for the Modern Helmholtz Coil Optimization GUI
+Launcher script for the Helmholtz Coil Optimization GUI
 
-This script launches the modern GUI with all 5 stages:
+This script launches the GUI with all 5 stages:
 1. First Order Optimization
 2. First Order Visualization  
 3. Geometric Optimization
@@ -22,10 +22,10 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
 try:
-    from modern_helmholtz_gui import main
+    from helm_opt_GUI import main
     
     if __name__ == "__main__":
-        print("Starting Modern Helmholtz Coil Optimization GUI...")
+        print("Starting Helmholtz Coil Optimization GUI...")
         print("=" * 50)
         print("Features:")
         print("1. First Order Optimization - Find optimal power supply and wire specs")
@@ -39,7 +39,7 @@ try:
 except ImportError as e:
     print(f"Error importing modules: {e}")
     print("Make sure all required files are in the correct locations:")
-    print("- modern_helmholtz_gui.py")
+    print("- helm_opt_GUI.py")
     print("- FirstOrderOptimizer.py")
     print("- GeometryOptimizer.py") 
     print("- electromagnet.py")

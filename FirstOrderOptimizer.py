@@ -110,6 +110,17 @@ class FirstOrderOptimizer:
         Pmax, Imax, Vmax, awg = params
         
         try:
+            # Check for reasonable power supply specs
+            # Power supply should be able to deliver at least some reasonable power
+            if Pmax < 1 or Imax < 0.1 or Vmax < 0.1:
+                return 1e6
+                
+            # Check that power supply specs are reasonable relative to each other
+            # Vmax * Imax should be close to Pmax (within reasonable tolerance)
+            max_possible_power = Vmax * Imax
+            if max_possible_power < Pmax * 0.5:  # Power supply should be able to deliver at least 50% of rated power
+                return 1e6
+                
             power_supply_specs = {'Pmax': Pmax, 'Imax': Imax, 'Vmax': Vmax}
             
             # Get power supply performance analysis (single calculation)
@@ -160,13 +171,17 @@ class FirstOrderOptimizer:
         Uses hybrid global+local optimization to avoid local optima.
         """
         if power_range is None:
-            power_range = (0, 10000)
+            power_range = (0, self.max_power)
             
         if current_range is None:
-            current_range = (0, 1000)
+            # Reasonable current range based on power budget
+            max_reasonable_current = min(1000, np.sqrt(self.max_power / 0.1))  # Assume min 0.1 ohm load
+            current_range = (0, max_reasonable_current)
             
         if voltage_range is None:
-            voltage_range = (0, self.max_power)
+            # Reasonable voltage range based on power budget
+            max_reasonable_voltage = min(1000, np.sqrt(self.max_power * 100))  # Assume max 100 ohm load
+            voltage_range = (0, max_reasonable_voltage)
             
         if awg_range is None:
             awg_range = (self.awg_min, self.awg_max)
@@ -266,14 +281,39 @@ class FirstOrderOptimizer:
         
         if global_result.success:
             print("Global optimization succeeded. Running local refinement...")
+            print(f"Global result: {global_result.x}")
+            print(f"Global function value: {global_result.fun}")
             # Use global result as starting point for local optimization
-            result = minimize(
-                fun=partial_objective,
-                x0=global_result.x,
-                method='L-BFGS-B',
-                bounds=param_bounds,
-                options={'disp': True, 'maxiter': 50}
-            )
+            try:
+                print(f"Starting local refinement with bounds: {param_bounds}")
+                print(f"Starting point: {global_result.x}")
+                result = minimize(
+                    fun=partial_objective,
+                    x0=global_result.x,
+                    method='L-BFGS-B',
+                    bounds=param_bounds,
+                    options={'disp': True, 'maxiter': 50, 'ftol': 1e-6, 'gtol': 1e-6}
+                )
+                print(f"Local refinement result: {result.message}")
+                print(f"Local refinement success: {result.success}")
+                
+                # If L-BFGS-B fails, try TNC as fallback
+                if not result.success:
+                    print("L-BFGS-B failed, trying TNC method...")
+                    result = minimize(
+                        fun=partial_objective,
+                        x0=global_result.x,
+                        method='TNC',
+                        bounds=param_bounds,
+                        options={'disp': True, 'maxiter': 50}
+                    )
+                    print(f"TNC result: {result.message}")
+                    print(f"TNC success: {result.success}")
+                    
+            except Exception as e:
+                print(f"Local refinement failed: {e}")
+                print("Using global result instead")
+                result = global_result
         else:
             print("Global optimization failed, using global result")
             result = global_result
@@ -382,14 +422,10 @@ class FirstOrderOptimizer:
     
     def _print_recommendation(self, rec):
         """Print formatted recommendation."""
-        print("\n" + "="*60)
-        print("OPTIMAL POWER SUPPLY AND WIRE CONFIGURATION")
-        print("="*60)
-        print(f"Power Supply Specifications:")
-        print(f"  Maximum Power: {rec['optimal_power_supply']['Pmax']:.0f} W")
-        print(f"  Maximum Current: {rec['optimal_power_supply']['Imax']:.1f} A")
-        print(f"  Maximum Voltage: {rec['optimal_power_supply']['Vmax']:.1f} V")
-        print(f"\nWire Specification:")
+        print("\n" + "="*50)
+        print("OPTIMIZATION RESULTS")
+        print("="*50)
+        print(f"Wire Specification:")
         print(f"  AWG Size: {rec['optimal_awg']:.1f} (use AWG{round(rec['optimal_awg'])})")
         print(f"\nOptimal Operating Point:")
         print(f"  Turns per Coil: {rec['operating_point']['turns_per_coil']:.0f}")
@@ -411,7 +447,7 @@ class FirstOrderOptimizer:
             if rec['optimization_info']['optimized_parameters']:
                 print(f"  Optimized Parameters: {', '.join(rec['optimization_info']['optimized_parameters'])}")
         
-        print("="*60)
+        print("="*50)
 
 def optimize_helmholtz(radius_m, weight_limit_lbs, max_power_w=10000,
                                    fixed_power=None, fixed_current=None, 
@@ -459,8 +495,7 @@ def optimize_helmholtz(radius_m, weight_limit_lbs, max_power_w=10000,
     )
     
     return optimizer.optimize_electromagnet(
-        current_range=(0, max_power_w),
-        voltage_range=(0, max_power_w),
+        # Let the optimizer determine reasonable bounds based on max_power
         fixed_power=fixed_power,
         fixed_current=fixed_current,
         fixed_voltage=fixed_voltage,

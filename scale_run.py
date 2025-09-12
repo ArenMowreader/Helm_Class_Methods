@@ -18,8 +18,8 @@ R = inside_dia/2 # radius
 field_range = (inside_dia/2) * .9 # meters
 #inside_box = ((2**.5)/4) * inside_dia # 1/2 of the side length of a square that fits inside coil
 depth = 2 * .0254 # 2 inches in meters
-turn_per_layer = 10
-layers = 120
+turn_per_layer = 30
+layers = 40
 weight_limit = 140 # lbs
 print(f"Turns per layer: {turn_per_layer}")
 print(f"Wire diameter: {AWG12.diameter_nom_m:.6f} m")
@@ -49,7 +49,7 @@ for j in range(layers):  # for each layer
         scale.add_mirrored_turns(radius= R + (j * AWG12.diameter_nom_m),
                                 separation= R + (2 * i * AWG12.diameter_nom_m), #2* because of mirrored turns
                                 points_per_turn=500)
-        scale.calc_b_field()
+        '''scale.calc_b_field()
         
         current[k] = scale.current # the ith turn in the jth layer
         weight[k] = scale.weight # the weight of the ith turn in the jth layer
@@ -62,14 +62,14 @@ for j in range(layers):  # for each layer
         #b_field_origin[k] = np.linalg.norm(scale.b_field[scale.b_field.shape[0]//2]) # the b-field magnitude at the origin
         b_mag[k] = np.linalg.norm(scale.b_field[0]) # the b-field magnitude at the ith turn in the jth layer
         turns[k] = scale.helm_turns # the number of turns at the ith turn in the jth layer
-        k += 1
-    print("% complete: ", (k / (turn_per_layer * layers)) * 100)
+        k += 1'''
+    #print("% complete: ", (k / (turn_per_layer * layers)) * 100)
     # Break when weight limit is exceeded
     if scale.weight >= weight_limit:
         break
     
 #final field analysis at weight limit
-
+scale.calc_b_field()
 scale.print_parameters()
 print("b-field origin: ", scale.b_field[0])
 print("b origin magnitude: ", np.linalg.norm(scale.b_field[0]))
