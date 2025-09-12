@@ -114,5 +114,14 @@ print(f"Origin: {percent_diff_origin:.2f}%")
 print(f"Point (0,0,0.125): {percent_diff_point_2:.2f}%")
 
 helm.print_parameters()
-helm.plot_b_field()
+
+# Plot with analytical solutions
+analytical_points = [origin, point_2]
+analytical_values = [analytical_origin, analytical_point_2]
+point_labels = ['Origin (0,0,0)', 'Point (0,0,0.125)']
+
+helm.plot_b_field_with_analytical(analytical_points=analytical_points,
+                                analytical_values=analytical_values,
+                                point_labels=point_labels,
+                                title_suffix=" - Numerical vs Analytical")
 

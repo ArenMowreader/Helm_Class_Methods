@@ -2,6 +2,9 @@ from electromagnet import PowerSupply, Wire, Emag
 import numpy as np
 import matplotlib.pyplot as plt
 
+# Physical constants
+mu_0 = 4 * np.pi * 10**-7  # Permeability of free space
+
 keysight = PowerSupply(name="Keysight RP7952A",
                         max_voltage=500,
                         max_current=40,
@@ -11,9 +14,12 @@ AWG12 = Wire(AWG=12)
 scale = Emag(power_supply=keysight, wire=AWG12)
 
 inside_dia = .25 # meters
+R = inside_dia/2 # radius
+field_range = (inside_dia/2) * .9 # meters
 #inside_box = ((2**.5)/4) * inside_dia # 1/2 of the side length of a square that fits inside coil
 depth = 2 * .0254 # 2 inches in meters
-turn_per_layer =37
+turn_per_layer = 10
+layers = 120
 weight_limit = 140 # lbs
 print(f"Turns per layer: {turn_per_layer}")
 print(f"Wire diameter: {AWG12.diameter_nom_m:.6f} m")
@@ -21,25 +27,27 @@ print(f"Layer depth: {depth:.6f} m")
 
 #scale.def_field(x_range=(-inside_box, inside_box), y_range=(-inside_box, inside_box), z_range=(inside_dia/2, inside_dia/2), points_per_axis=5)
 scale.def_field((0, 0), (0, 0), (0, 0))
-current = np.zeros(turn_per_layer * turn_per_layer)
-resistance = np.zeros(turn_per_layer * turn_per_layer)
-voltage = np.zeros(turn_per_layer * turn_per_layer)
-power = np.zeros(turn_per_layer * turn_per_layer)
-length = np.zeros(turn_per_layer * turn_per_layer)
-weight = np.zeros(turn_per_layer * turn_per_layer)
-b_field = np.zeros((turn_per_layer * turn_per_layer, scale.field.shape[0], 3))
-b_mag = np.zeros(turn_per_layer * turn_per_layer)
-turns = np.zeros(turn_per_layer * turn_per_layer)
+current = np.zeros(turn_per_layer * layers)
+resistance = np.zeros(turn_per_layer * layers)
+voltage = np.zeros(turn_per_layer * layers)
+power = np.zeros(turn_per_layer * layers)
+length = np.zeros(turn_per_layer * layers)
+weight = np.zeros(turn_per_layer * layers)
+b_field = np.zeros((turn_per_layer * layers, scale.field.shape[0], 3))
+b_field_avg = np.zeros(turn_per_layer * layers)
+b_field_origin = np.zeros(turn_per_layer * layers)
+b_mag = np.zeros(turn_per_layer * layers)
+turns = np.zeros(turn_per_layer * layers)
 # Fill the arrays layer by layer
 k = 0
-for j in range(turn_per_layer):  # from 0 to 1
+for j in range(layers):  # for each layer
     for i in range(turn_per_layer ):  # For each turn in the layer
         # Check if adding this turn would exceed weight limit
         if scale.weight >= weight_limit:
             break
             
-        scale.add_mirrored_turns(radius= (inside_dia / 2) + (j * AWG12.diameter_nom_m),
-                                separation= inside_dia + (i * AWG12.diameter_nom_m),
+        scale.add_mirrored_turns(radius= R + (j * AWG12.diameter_nom_m),
+                                separation= R + (2 * i * AWG12.diameter_nom_m), #2* because of mirrored turns
                                 points_per_turn=500)
         scale.calc_b_field()
         
@@ -50,10 +58,12 @@ for j in range(turn_per_layer):  # from 0 to 1
         resistance[k] = scale.resistance # the resistance of the ith turn in the jth layer
         length[k] = scale.coil_length # the length of wire at the ith turn in the jth layer
         b_field[k] = scale.b_field # the b-field at the ith turn in the jth layer
-        b_mag[k] = np.linalg.norm(scale.b_field, axis=1) # the b-field magnitude at the ith turn in the jth layer
+        #b_field_avg[k] = np.mean(np.linalg.norm(scale.b_field, axis=1)) # the b-field magnitude at the ith turn in the jth layer
+        #b_field_origin[k] = np.linalg.norm(scale.b_field[scale.b_field.shape[0]//2]) # the b-field magnitude at the origin
+        b_mag[k] = np.linalg.norm(scale.b_field[0]) # the b-field magnitude at the ith turn in the jth layer
         turns[k] = scale.helm_turns # the number of turns at the ith turn in the jth layer
         k += 1
-    print("% complete: ", (k / (turn_per_layer * turn_per_layer)) * 100)
+    print("% complete: ", (k / (turn_per_layer * layers)) * 100)
     # Break when weight limit is exceeded
     if scale.weight >= weight_limit:
         break
@@ -65,12 +75,13 @@ print("b-field origin: ", scale.b_field[0])
 print("b origin magnitude: ", np.linalg.norm(scale.b_field[0]))
 
 #redefine field
-scale.def_field((-inside_dia/2, inside_dia/2), (-inside_dia/2, inside_dia/2), 
-(-inside_dia/2, inside_dia/2), points_per_axis=5)
+scale.def_field ((0, 0), (0, 0), (0, 0), points_per_axis=5)
 scale.calc_b_field()
 scale.plot_b_field()
-print("b-field max: ", np.max(b_mag))
+print("b-field max: ", np.max(scale.b_field))
 print("b-field avg: ", np.mean(np.linalg.norm(scale.b_field, axis=1)))
+
+analytical = 8*mu_0*current*turns/( R * np.sqrt(125))
 
 # Create figure with subplots for each parameter
 fig, axes = plt.subplots(3, 3, figsize=(15, 12))
@@ -121,45 +132,28 @@ axes[1, 2].set_ylabel('Voltage (V)')
 axes[1, 2].set_title('Voltage vs Turns')
 axes[1, 2].grid(True)
 
-# Plot 7: B-field Average
+# Plot 7: B-field Magnitude at Origin
 axes[2, 0].plot(turns[valid_mask], b_mag[valid_mask], 'purple', linewidth=2)
+axes[2, 0].plot(turns[valid_mask], analytical[valid_mask], 'green', linewidth=2)
 axes[2, 0].set_xlabel('Number of Turns')
 axes[2, 0].set_ylabel('B-field Magnitude at Origin (T)')
 axes[2, 0].set_title('B-field Magnitude at Origin vs Turns')
 axes[2, 0].grid(True)
 
+# Plot 8: B-field Average and Magnitude at Origin
+'''axes[2, 1].plot(turns[valid_mask], b_field_avg[valid_mask], 'brown', linewidth=2)
+axes[2, 1].plot(turns[valid_mask], b_field_origin[valid_mask], 'teal', linewidth=2)
+axes[2, 1].set_xlabel('Number of Turns')
+axes[2, 1].set_ylabel('B-field Average and Magnitude at Origin (T)')
+axes[2, 1].set_title('B-field Average and Magnitude at Origin vs Turns')
+axes[2, 1].grid(True)
+'''
+
 
 plt.tight_layout()
 plt.show()
 
-# Also create a summary plot showing all parameters on one graph (normalized)
-fig2, ax2 = plt.subplots(figsize=(12, 8))
 
-# Normalize all parameters to their maximum values for comparison
-coil_length_norm = length[valid_mask] / np.max(length[valid_mask])
-weight_norm = weight[valid_mask] / np.max(weight[valid_mask])
-resistance_norm = resistance[valid_mask] / np.max(resistance[valid_mask])
-power_norm = power[valid_mask] / np.max(power[valid_mask])
-current_norm = current[valid_mask] / np.max(current[valid_mask])
-voltage_norm = voltage[valid_mask] / np.max(voltage[valid_mask])
-b_avg_norm = b_avg[valid_mask] / np.max(b_avg[valid_mask])
-b_max_norm = b_max[valid_mask] / np.max(b_max[valid_mask])
-
-ax2.plot(turns[valid_mask], coil_length_norm, 'b-', linewidth=2, label='Coil Length')
-ax2.plot(turns[valid_mask], weight_norm, 'r-', linewidth=2, label='Weight')
-ax2.plot(turns[valid_mask], resistance_norm, 'g-', linewidth=2, label='Resistance')
-ax2.plot(turns[valid_mask], power_norm, 'm-', linewidth=2, label='Power')
-ax2.plot(turns[valid_mask], current_norm, 'c-', linewidth=2, label='Current')
-ax2.plot(turns[valid_mask], voltage_norm, 'orange', linewidth=2, label='Voltage')
-ax2.plot(turns[valid_mask], b_avg_norm, 'purple', linewidth=2, label='B-field Average')
-ax2.plot(turns[valid_mask], b_max_norm, 'brown', linewidth=2, label='B-field Maximum')
-
-ax2.set_xlabel('Number of Turns')
-ax2.set_ylabel('Normalized Value')
-ax2.set_title('All Parameters vs Turns (Normalized)')
-ax2.legend()
-ax2.grid(True)
-plt.show()
 
 print(f"Analysis complete! Generated plots for {np.sum(valid_mask)} valid data points.")
 print(f"Turn range: {np.min(turns[valid_mask]):.0f} to {np.max(turns[valid_mask]):.0f} turns")
